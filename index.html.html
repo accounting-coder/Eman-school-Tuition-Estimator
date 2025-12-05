@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eman Schools Tuition Estimator</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        .container { background-color: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); max-width: 800px; margin: auto; }
+        h1, h2, h4 { text-align: center; color: #333; }
+        h1 { margin-bottom: 5px; }
+        h2 { margin-bottom: 30px; font-size: 1.2rem; font-weight: normal; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
+        select, input[type="number"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 15px; background-color: #007bff; color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer; transition: background-color 0.3s ease; }
+        button:hover { background-color: #0056b3; }
+        #studentsContainer { border-top: 1px solid #ddd; padding-top: 20px; margin-top: 20px; }
+        .student-group { margin-bottom: 15px; padding: 15px; background-color: #fafafa; border: 1px solid #eee; border-radius: 8px; }
+        #results { margin-top: 30px; padding: 20px; border-radius: 8px; background-color: #e9ecef; border: 1px solid #dee2e6; }
+        .result-item { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .credit-item { color: #dc3545; }
+        .charge-item { color: #000; }
+        .highlight-item { color: #007bff; font-weight: bold; }
+        .sub-total { font-weight: bold; margin-top: 10px; padding-top: 5px; border-top: 1px dashed #ccc; }
+        .total { font-size: 22px; font-weight: bold; color: #28a745; margin-top: 15px; border-top: 2px solid #dee2e6; padding-top: 15px; }
+        .sgo-alert { color: #D9534F; background-color: #F2DEDE; border: 1px solid #D9534F; padding: 15px; border-radius: 8px; margin-top: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Eman Schools</h1>
+    <h2>Annual Tuition Estimator Tool</h2>
+
+    <div class="form-group">
+        <label for="income">Family Gross Income (1040):</label>
+        <select id="income">
+            <option value="">-- Select Income Bracket --</option>
+            <option value="0_100k">$0 - $100,000</option>
+            <option value="100k_150k">$100,001 - $150,000</option>
+            <option value="150k_200k">$150,001 - $200,000</option>
+            <option value="200k_250k">$200,001 - $250,000</option>
+            <option value="250k_300k">$250,001 - $300,000</option>
+            <option value="300k_400k">$300,001 - $400,000</option>
+            <option value="400k_plus">$400,001 and above</option>
+            <option value="no_declare">Do not wish to declare income</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="contributionMethod">Tuition Contribution Payment Method:</label>
+        <select id="contributionMethod">
+            <option value="monthly">Pay Monthly with Tuition (Donation receipt at year end)</option>
+            <option value="sgo_donation">Pay via SGO (Get ~50% State Tax Credit)</option>
+        </select>
+    </div>
+    
+    <div class="form-group">
+        <label for="numStudentsInput">Number of Students Enrolled (Max 6):</label>
+        <select id="numStudentsInput" onchange="generateStudentInputs()">
+            <option value="1">1 Student</option>
+            <option value="2">2 Students</option>
+            <option value="3">3 Students</option>
+            <option value="4">4 Students</option>
+            <option value="5">5 Students</option>
+            <option value="6">6 Students</option>
+        </select>
+    </div>
+
+    <div id="studentsContainer">
+        <!-- Student grade selections will be generated here by JavaScript -->
+    </div>
+
+    <button onclick="calculateTuition()">Calculate Estimated Net Tuition</button>
+
+    <div id="results">
+        <h3>Calculation Summary</h3>
+        <!-- Results will be displayed here -->
+    </div>
+</div>
+
+<script>
+    // --- Configuration Constants ---
+    const TUITION_PK8 = 8845;
+    const TUITION_912 = 9365;
+    const DEV_FEE = 2000;
+    const UMRAH_FEE = 1000; 
+    const STATE_VOUCHER_CREDIT_PER_STUDENT = 6300;
+    const MAX_FAMILY_CONTRIBUTION = 7500; 
+    const COMMITMENT_FEE = 500;
+
+    const incomeBrackets = {
+        '0_100k': { label: '$0 - $100,000', contributionRate: 0, sgoCredit: 1750 },
+        '100k_150k': { label: '$100,001 - $150,000', contributionRate: 0.05, sgoCredit: 1750 },
+        '150k_200k': { label: '$150,001 - $200,000', contributionRate: 0.10, sgoCredit: 1500 },
+        '200k_250k': { label: '$200,001 - $250,000', contributionRate: 0.20, sgoCredit: 1500 },
+        '250k_300k': { label: '$250,001 - $300,000', contributionRate: 0.30, sgoCredit: 1000 },
+        '300k_400k': { label: '$300,001 - $400,000', contributionRate: 0.35, sgoCredit: 500 },
+        '400k_plus': { label: '$400,001 and above', contributionRate: 0.40, sgoCredit: 0 },
+        'no_declare': { label: 'Not Declared', contributionRate: 0.40, sgoCredit: 0 }
+    };
+
+    function generateStudentInputs() {
+        const container = document.getElementById('studentsContainer');
+        const numStudents = parseInt(document.getElementById('numStudentsInput').value);
+        container.innerHTML = '';
+
+        const gradesHTML = `
+            <option value="">-- Select Grade --</option>
+            <option value="PK">PK (Pre-K)</option>
+            <option value="KG">KG (Kindergarten)</option>
+            <option value="1">1st Grade</option>
+            <option value="2">2nd Grade</option>
+            <option value="3">3rd Grade</option>
+            <option value="4">4th Grade</option>
+            <option value="5">5th Grade</option>
+            <option value="6">6th Grade</option>
+            <option value="7">7th Grade</option>
+            <option value="8">8th Grade</option>
+            <option value="9">9th Grade</option>
+            <option value="10">10th Grade</option>
+            <option value="11">11th Grade</option>
+            <option value="12">12th Grade</option>
+        `;
+
+        for (let i = 1; i <= numStudents; i++) {
+            const studentGroup = document.createElement('div');
+            studentGroup.classList.add('student-group');
+            studentGroup.innerHTML = `
+                <label for="grade_${i}">Student ${i} Grade Level:</label>
+                <select id="grade_${i}" class="student-grade">
+                    ${gradesHTML}
+                </select>
+            `;
+            container.appendChild(studentGroup);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', generateStudentInputs);
+
+    function calculateTuition() {
+        const incomeBracketKey = document.getElementById('income').value;
+        const contributionMethod = document.getElementById('contributionMethod').value;
+        const studentGrades = Array.from(document.getElementsByClassName('student-grade')).map(select => select.value);
+        const resultsDiv = document.getElementById('results');
+
+        resultsDiv.innerHTML = '<h3>Calculation Summary</h3>';
+
+        if (!incomeBracketKey || studentGrades.some(grade => !grade)) {
+            resultsDiv.innerHTML += '<div class="error">Please make all selections to calculate tuition.</div>';
+            return;
+        }
+
+        const numStudents = studentGrades.length;
+        const incomeInfo = incomeBrackets[incomeBracketKey];
+        const sgoCreditBasePerStudent = incomeInfo.sgoCredit;
+        const incomeContributionRate = incomeInfo.contributionRate;
+        const siblingDiscountRate = (numStudents === 2) ? 0.025 : (numStudents >= 3 ? 0.05 : 0);
+
+        let totalIncomeContributionFamilyRaw = 0;
+        let studentsBaseTuitionAfterSiblingDiscount = [];
+        let studentsEligibleForContribution = [];
+
+        // --- Pass 1: Calculate raw income contribution for capping ---
+        studentGrades.forEach(grade => {
+            const gradeIsPK8 = ['PK', 'KG', '1', '2', '3', '4', '5', '6', '7', '8'].includes(grade);
+            const baseTuition = gradeIsPK8 ? TUITION_PK8 : TUITION_912;
+            const tuitionAfterSiblingDiscount = baseTuition * (1 - siblingDiscountRate);
+            studentsBaseTuitionAfterSiblingDiscount.push(tuitionAfterSiblingDiscount);
+            
+            // Only add to the contribution pool if NOT a PK student
+            if (grade !== 'PK') {
+                totalIncomeContributionFamilyRaw += tuitionAfterSiblingDiscount * incomeContributionRate;
+                studentsEligibleForContribution.push(true);
+            } else {
+                studentsEligibleForContribution.push(false);
+            }
+        });
+
+        // Apply family cap to total contribution
+        const actualFamilyContributionTotal = Math.min(totalIncomeContributionFamilyRaw, MAX_FAMILY_CONTRIBUTION);
+        
+        // --- Pass 2: Calculate all charges and credits per student ---
+        let grandTotalNetPayableToSchool = 0;
+        let totalSGOAmountNeededForDonation = 0;
+        let familySummaryHTML = '';
+
+        studentGrades.forEach((grade, index) => {
+            const gradeIsPK8 = ['PK', 'KG', '1', '2', '3', '4', '5', '6', '7', '8'].includes(grade);
+            const baseTuition = gradeIsPK8 ? TUITION_PK8 : TUITION_912;
+            const umrahFee = (grade === '12') ? UMRAH_FEE : 0;
+            const isKG12 = ['KG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'].includes(grade);
+
+            const developmentFeeForStudent = (grade !== 'PK') ? DEV_FEE : 0; // Exclude PK from dev fee
+
+            const siblingDiscountAmt = baseTuition * siblingDiscountRate;
+            
+            let proportionalContributionShare = 0;
+            if (studentsEligibleForContribution[index]) {
+                proportionalContributionShare = (totalIncomeContributionFamilyRaw > 0) ? 
+                    ( (studentsBaseTuitionAfterSiblingDiscount[index] * incomeContributionRate) / totalIncomeContributionFamilyRaw) * actualFamilyContributionTotal : 0;
+            }
+            
+            const stateVoucher = isKG12 ? STATE_VOUCHER_CREDIT_PER_STUDENT : 0;
+            const sgoAssistance = isKG12 ? sgoCreditBasePerStudent : 0;
+
+            let tuitionContributionChargeToSchoolBill = 0;
+            
+            if (contributionMethod === 'monthly') {
+                tuitionContributionChargeToSchoolBill = proportionalContributionShare;
+            } else if (contributionMethod === 'sgo_donation') {
+                totalSGOAmountNeededForDonation += proportionalContributionShare;
+                // tuitionContributionChargeToSchoolBill remains 0
+            }
+
+            const grossPerStudent = baseTuition + developmentFeeForStudent + umrahFee + tuitionContributionChargeToSchoolBill - siblingDiscountAmt;
+            
+            const totalCreditsPerStudent = stateVoucher + sgoAssistance;
+            const netPerStudent = grossPerStudent - totalCreditsPerStudent;
+            
+            grandTotalNetPayableToSchool += netPerStudent;
+
+            // Build HTML for per-student breakdown
+            familySummaryHTML += `
+                <h4>Student ${index + 1} (${grade} Grade) Breakdown:</h4>
+                <div class="result-item charge-item"><span>Base Tuition:</span><span>$${baseTuition.toLocaleString()}</span></div>
+                <div class="result-item charge-item"><span>Development Fee:</span><span>$${developmentFeeForStudent.toLocaleString()}</span></div>
+                <div class="result-item charge-item"><span>Umrah Trip Fee:</span><span>$${umrahFee.toLocaleString()}</span></div>
+                <div class="result-item credit-item"><span>Sibling Discount Credit:</span><span>-$${siblingDiscountAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                ${tuitionContributionChargeToSchoolBill > 0 ? 
+                    `<div class="result-item charge-item highlight-item"><span>Tuition Contribution Charge:</span><span>+$${tuitionContributionChargeToSchoolBill.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ''
+                }
+                 ${proportionalContributionShare > 0 && tuitionContributionChargeToSchoolBill === 0 ?
+                    `<div class="result-item highlight-item" style="color: #4CAF50;"><span>Tuition Contribution via SGO (Not charged to bill):</span><span>$${proportionalContributionShare.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : ''
+                }
+                <div class="result-item credit-item"><span>SGO Assistance Credit:</span><span>-$${sgoAssistance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                <div class="result-item credit-item"><span>State Voucher Assistance Credit:</span><span>-$${stateVoucher.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                <div class="result-item sub-total"><span>Net Payable for Student ${index + 1}:</span><span>$${netPerStudent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+            `;
+        });
+
+        // --- Final Summary and Payment Plan Breakdown ---
+        resultsDiv.innerHTML += familySummaryHTML;
+        resultsDiv.innerHTML += `
+            <div class="result-item total"><span>Estimated Annual Family Total Payable to School:</span><span>$${grandTotalNetPayableToSchool.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+        `;
+
+        let balanceAfterCommitment = grandTotalNetPayableToSchool - COMMITMENT_FEE;
+        if (balanceAfterCommitment < 0) balanceAfterCommitment = 0;
+        const monthlyPaymentEstimate = balanceAfterCommitment / 12;
+
+        resultsDiv.innerHTML += `
+            <div style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px;">
+                <h4>Payment Plan Breakdown:</h4>
+                <div class="result-item"><span><strong>Commitment Fee Due (April 10th):</strong></span><span><strong>$${COMMITMENT_FEE.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span></div>
+                <div class="result-item"><span>Remaining Balance (12 Installments):</span><span>$${balanceAfterCommitment.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                <div class="result-item total" style="color: #000; font-size: 18px;"><span>Estimated Monthly Payment (June - May):</span><span><strong>$${monthlyPaymentEstimate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span></div>
+            </div>
+        `;
+        
+        // --- SGO/Monthly Payment Notes ---
+        if (contributionMethod === 'sgo_donation' && totalSGOAmountNeededForDonation > 0) {
+             resultsDiv.innerHTML += `
+            <p class="sgo-alert">
+            ACTION REQUIRED: You must donate a total of <strong>$${totalSGOAmountNeededForDonation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> separately to the SGO organization to receive your 50% state tax credit and validate these tuition numbers with the school.<br><br>
+            If the SGO donation amount is not paid by **November 30th**, this amount will be added back to your FACTS tuition account and will be due as a direct payment to the school.
+            </p>
+            `;
+        } else if (contributionMethod === 'monthly' && actualFamilyContributionTotal > 0) {
+             resultsDiv.innerHTML += `
+             <p style="margin-top: 20px; font-weight: bold; border-top: 1px solid #ccc; padding-top: 10px;">
+             Note: The total Tuition Contribution amount of $${actualFamilyContributionTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} has been added to your monthly FACTS tuition charges. A donation receipt for this amount will be provided at year-end.
+             </p>
+             `;
+        }
+    }
+</script>
+
+</body>
+</html>
